@@ -12,10 +12,12 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to track your workout sessions.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location to track your workout sessions.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location to track your workout sessions even when the app is in the background or locked.",
+        "NSLocationAlwaysUsageDescription": "This app needs access to your location to track your workout sessions even when the app is in the background or locked.",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "bundleIdentifier": "com.anonymous.enforholdet"
+      "bundleIdentifier": "com.anonymous.enforholdet",
+      "usesLocationServices": true
     },
     "android": {
       "adaptiveIcon": {

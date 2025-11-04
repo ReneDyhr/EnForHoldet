@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
 import { TrackingSession, LocationPoint } from '../types/tracking';
 import { storageService } from '../services/storage';
+import { LOCATION_TASK_NAME } from '../tasks/locationTracking';
 
 export const useLocationTracking = () => {
   const [isTracking, setIsTracking] = useState(false);
@@ -28,20 +30,100 @@ export const useLocationTracking = () => {
     return R * c;
   };
 
-  // Request location permissions
+  // Request location permissions (foreground and background)
   const requestPermissions = async (): Promise<boolean> => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setError('Location permission not granted');
+      // First check if foreground permission is already granted
+      const { status: currentStatus } = await Location.getForegroundPermissionsAsync();
+      
+      let foregroundStatus = currentStatus;
+      
+      // Request foreground permission if not already granted
+      if (currentStatus !== 'granted') {
+        const requestResult = await Location.requestForegroundPermissionsAsync();
+        foregroundStatus = requestResult.status;
+      }
+      
+      if (foregroundStatus !== 'granted') {
+        setError('Location permission is required to track your workout. Please enable it in Settings.');
         return false;
       }
+
+      // Try to request background permission (may not be available on all platforms)
+      try {
+        const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+        if (backgroundStatus !== 'granted') {
+          // On iOS, background permission might require user to enable "Always" in Settings
+          console.warn('Background location permission not granted. Tracking may stop when app is backgrounded.');
+          // Don't set error here - allow tracking to continue with foreground permission
+        }
+      } catch (backgroundErr) {
+        // Background permission request might fail on some platforms or iOS versions
+        console.warn('Could not request background permission:', backgroundErr);
+        // Continue with foreground permission only
+      }
+
       return true;
     } catch (err) {
-      setError('Failed to request location permission');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Permission request error:', err);
+      setError(`Failed to request location permission: ${errorMessage}`);
       return false;
     }
   };
+
+  // Location update handler
+  const handleLocationUpdate = useCallback((location: Location.LocationObject) => {
+    const locationPoint: LocationPoint = {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      timestamp: location.timestamp,
+      accuracy: location.coords.accuracy || undefined,
+      altitude: location.coords.altitude || undefined,
+      speed: location.coords.speed || undefined,
+    };
+
+    setCurrentSession((prev) => {
+      if (!prev) {
+        // If no session exists, create one (for background recovery)
+        const sessionId = `session_${Date.now()}`;
+        const newSession: TrackingSession = {
+          id: sessionId,
+          startTime: Date.now(),
+          locations: [locationPoint],
+          distance: 0,
+          duration: 0,
+        };
+        storageService.saveCurrentSession(newSession);
+        return newSession;
+      }
+
+      const updatedLocations = [...prev.locations, locationPoint];
+      
+      // Calculate total distance
+      let totalDistance = 0;
+      if (updatedLocations.length > 1) {
+        for (let i = 1; i < updatedLocations.length; i++) {
+          totalDistance += calculateDistance(
+            updatedLocations[i - 1],
+            updatedLocations[i]
+          );
+        }
+      }
+
+      const updatedSession = {
+        ...prev,
+        locations: updatedLocations,
+        distance: totalDistance,
+        duration: Date.now() - prev.startTime,
+      };
+
+      // Save to storage for recovery
+      storageService.saveCurrentSession(updatedSession);
+
+      return updatedSession;
+    });
+  }, []);
 
   // Start tracking
   const startTracking = useCallback(async () => {
@@ -62,57 +144,43 @@ export const useLocationTracking = () => {
       setCurrentSession(newSession);
       setIsTracking(true);
 
-      // Subscribe to location updates
-      locationSubscriptionRef.current = await Location.watchPositionAsync(
-        {
+      // Try to start background location updates (may not work in Expo Go)
+      try {
+        await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
           accuracy: Location.Accuracy.BestForNavigation,
           timeInterval: 1000, // Update every second
           distanceInterval: 5, // Update every 5 meters
+          foregroundService: {
+            notificationTitle: 'Tracking Session',
+            notificationBody: 'Your workout is being tracked',
+            notificationColor: '#007AFF',
+          },
+          pausesUpdatesAutomatically: false,
+          activityType: Location.ActivityType.Fitness,
+          mayShowUserSettingsDialog: true,
+          deferredUpdatesInterval: 0, // Process updates immediately
+          deferredUpdatesDistance: 0,
+        });
+      } catch (backgroundError) {
+        // Background location may not be available in Expo Go
+        console.warn('Background location not available (may be running in Expo Go):', backgroundError);
+        // Continue with foreground tracking only
+      }
+
+      // Always use watchPositionAsync for immediate updates (works in foreground)
+      locationSubscriptionRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 1000,
+          distanceInterval: 5,
         },
-        (location) => {
-          const locationPoint: LocationPoint = {
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            timestamp: location.timestamp,
-            accuracy: location.coords.accuracy || undefined,
-            altitude: location.coords.altitude || undefined,
-            speed: location.coords.speed || undefined,
-          };
-
-          setCurrentSession((prev) => {
-            if (!prev) return prev;
-            const updatedLocations = [...prev.locations, locationPoint];
-            
-            // Calculate total distance
-            let totalDistance = 0;
-            if (updatedLocations.length > 1) {
-              for (let i = 1; i < updatedLocations.length; i++) {
-                totalDistance += calculateDistance(
-                  updatedLocations[i - 1],
-                  updatedLocations[i]
-                );
-              }
-            }
-
-            const updatedSession = {
-              ...prev,
-              locations: updatedLocations,
-              distance: totalDistance,
-              duration: Date.now() - prev.startTime,
-            };
-
-            // Save to storage for recovery
-            storageService.saveCurrentSession(updatedSession);
-
-            return updatedSession;
-          });
-        }
+        handleLocationUpdate
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start tracking');
       setIsTracking(false);
     }
-  }, []);
+  }, [handleLocationUpdate]);
 
   // Stop tracking
   const stopTracking = useCallback(async () => {
@@ -120,6 +188,14 @@ export const useLocationTracking = () => {
       if (locationSubscriptionRef.current) {
         locationSubscriptionRef.current.remove();
         locationSubscriptionRef.current = null;
+      }
+
+      // Stop background location updates (if they were started)
+      try {
+        await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      } catch (stopError) {
+        // Ignore errors if background tracking wasn't started (e.g., in Expo Go)
+        console.warn('Could not stop background location updates:', stopError);
       }
 
       if (currentSession) {
@@ -155,50 +231,34 @@ export const useLocationTracking = () => {
         try {
           const hasPermission = await requestPermissions();
           if (hasPermission) {
+            // Try to restart background location updates (may not work in Expo Go)
+            try {
+              await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+                accuracy: Location.Accuracy.BestForNavigation,
+                timeInterval: 1000,
+                distanceInterval: 5,
+                foregroundService: {
+                  notificationTitle: 'Tracking Session',
+                  notificationBody: 'Your workout is being tracked',
+                  notificationColor: '#007AFF',
+                },
+                pausesUpdatesAutomatically: false,
+                activityType: Location.ActivityType.Fitness,
+                deferredUpdatesInterval: 0,
+                deferredUpdatesDistance: 0,
+              });
+            } catch (backgroundError) {
+              console.warn('Background location not available:', backgroundError);
+            }
+
+            // Always use watchPositionAsync for immediate updates
             locationSubscriptionRef.current = await Location.watchPositionAsync(
               {
                 accuracy: Location.Accuracy.BestForNavigation,
                 timeInterval: 1000,
                 distanceInterval: 5,
               },
-              (location) => {
-                const locationPoint: LocationPoint = {
-                  latitude: location.coords.latitude,
-                  longitude: location.coords.longitude,
-                  timestamp: location.timestamp,
-                  accuracy: location.coords.accuracy || undefined,
-                  altitude: location.coords.altitude || undefined,
-                  speed: location.coords.speed || undefined,
-                };
-
-                setCurrentSession((prev) => {
-                  if (!prev) return prev;
-                  const updatedLocations = [...prev.locations, locationPoint];
-                  
-                  // Calculate total distance
-                  let totalDistance = 0;
-                  if (updatedLocations.length > 1) {
-                    for (let i = 1; i < updatedLocations.length; i++) {
-                      totalDistance += calculateDistance(
-                        updatedLocations[i - 1],
-                        updatedLocations[i]
-                      );
-                    }
-                  }
-
-                  const updatedSession = {
-                    ...prev,
-                    locations: updatedLocations,
-                    distance: totalDistance,
-                    duration: Date.now() - prev.startTime,
-                  };
-
-                  // Save to storage for recovery
-                  storageService.saveCurrentSession(updatedSession);
-
-                  return updatedSession;
-                });
-              }
+              handleLocationUpdate
             );
           }
         } catch (err) {

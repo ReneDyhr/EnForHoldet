@@ -46,6 +46,11 @@ export default function Index() {
       {error && (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
+          {error.includes('Background location') || error.includes('UIBackgroundModes') ? (
+            <Text style={styles.warningText}>
+              Note: Background tracking requires a development build. Tracking will work while the app is open.
+            </Text>
+          ) : null}
         </View>
       )}
 
@@ -113,6 +118,12 @@ const styles = StyleSheet.create({
   errorText: {
     color: '#c33',
     fontSize: 14,
+  },
+  warningText: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   statsContainer: {
     flexDirection: 'row',

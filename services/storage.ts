@@ -5,12 +5,21 @@ const SESSIONS_KEY = '@tracking_sessions';
 const CURRENT_SESSION_KEY = '@current_tracking_session';
 
 export const storageService = {
-  // Save a tracking session
+  // Save a tracking session (updates if exists, adds if new)
   async saveSession(session: TrackingSession): Promise<void> {
     try {
       const sessions = await this.getSessions();
-      const updatedSessions = [...sessions, session];
-      await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(updatedSessions));
+      const existingIndex = sessions.findIndex(s => s.id === session.id);
+      
+      if (existingIndex >= 0) {
+        // Update existing session
+        sessions[existingIndex] = session;
+      } else {
+        // Add new session
+        sessions.push(session);
+      }
+      
+      await AsyncStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
     } catch (error) {
       console.error('Error saving session:', error);
       throw error;

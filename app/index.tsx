@@ -26,7 +26,14 @@ export default function Index() {
 
   const handleToggleTracking = async () => {
     if (isTracking) {
-      await stopTracking();
+      const sessionId = await stopTracking();
+      if (sessionId) {
+        // Navigate to summary screen to enter session details
+        router.push({
+          pathname: '/session-summary',
+          params: { sessionId },
+        });
+      }
     } else {
       await startTracking();
     }

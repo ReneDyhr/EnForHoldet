@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useState, useCallback } from 'react';
 import { TrackingSession } from '../types/tracking';
 import { storageService } from '../services/storage';
-import { formatDate, formatDuration, formatDistance } from '../utils/format';
+import { formatDate, formatDuration, formatDistance, formatWeight, formatCategories } from '../utils/format';
 
 export default function Sessions() {
   const router = useRouter();
@@ -115,12 +115,47 @@ export default function Sessions() {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={styles.viewMapButton}
-              onPress={() => handleViewMap(item)}
-            >
-              <Text style={styles.viewMapButtonText}>View on Map</Text>
-            </TouchableOpacity>
+            {(item.totalWeightG !== undefined || item.foundCategories) && (
+              <View style={styles.summarySection}>
+                {item.totalWeightG !== undefined && (
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryLabel}>Weight:</Text>
+                    <Text style={styles.summaryValue}>
+                      {formatWeight(item.totalWeightG)}
+                    </Text>
+                  </View>
+                )}
+                {item.foundCategories && item.foundCategories.length > 0 && (
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryLabel}>Categories:</Text>
+                    <Text style={styles.summaryValue}>
+                      {formatCategories(item.foundCategories)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => router.push({
+                  pathname: '/session-summary',
+                  params: { sessionId: item.id },
+                })}
+              >
+                <Text style={styles.editButtonText}>
+                  {item.totalWeightG !== undefined || item.foundCategories ? 'Edit Summary' : 'Add Summary'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.viewMapButton}
+                onPress={() => handleViewMap(item)}
+              >
+                <Text style={styles.viewMapButtonText}>View on Map</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
       />
@@ -220,7 +255,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
   },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  editButton: {
+    flex: 1,
+    backgroundColor: '#34C759',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  editButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   viewMapButton: {
+    flex: 1,
     backgroundColor: '#007AFF',
     paddingVertical: 12,
     borderRadius: 8,
@@ -230,6 +282,30 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  summarySection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderColor: '#f0f0f0',
+  },
+  summaryItem: {
+    flexDirection: 'row',
+    marginBottom: 8,
+    alignItems: 'flex-start',
+  },
+  summaryLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginRight: 8,
+    minWidth: 80,
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+    flexWrap: 'wrap',
   },
 });
 

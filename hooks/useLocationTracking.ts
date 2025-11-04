@@ -183,7 +183,7 @@ export const useLocationTracking = () => {
   }, [handleLocationUpdate]);
 
   // Stop tracking
-  const stopTracking = useCallback(async () => {
+  const stopTracking = useCallback(async (): Promise<string | null> => {
     try {
       if (locationSubscriptionRef.current) {
         locationSubscriptionRef.current.remove();
@@ -194,7 +194,7 @@ export const useLocationTracking = () => {
       try {
         await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
       } catch (stopError) {
-        // Ignore errors if background tracking wasn't started (e.g., in Expo Go)
+        // Ignore errors if background location updates weren't started (e.g., in Expo Go)
         console.warn('Could not stop background location updates:', stopError);
       }
 
@@ -205,18 +205,24 @@ export const useLocationTracking = () => {
           duration: Date.now() - currentSession.startTime,
         };
 
-        // Save session to storage
-        await storageService.saveSession(finalSession);
+        // Save session temporarily to currentSession storage so summary screen can access it
+        // Don't save to sessions list yet - wait for summary form submission
+        await storageService.saveCurrentSession(finalSession);
         
-        // Clear current session from storage
-        await storageService.saveCurrentSession(null);
-        
+        // Clear current session from state
         setCurrentSession(null);
+        setIsTracking(false);
+        
+        // Return session ID so caller can navigate to summary screen
+        return finalSession.id;
       }
 
       setIsTracking(false);
+      return null;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to stop tracking');
+      setIsTracking(false);
+      return null;
     }
   }, [currentSession]);
 

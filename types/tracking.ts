@@ -1,3 +1,5 @@
+export type Category = 'mixed' | 'plastic' | 'metal' | 'glass' | 'paper' | 'other';
+
 export interface LocationPoint {
   latitude: number;
   longitude: number;
@@ -15,5 +17,7 @@ export interface TrackingSession {
   locations: LocationPoint[];
   distance?: number; // in meters
   duration?: number; // in seconds
+  totalWeightG?: number; // in grams (store in g, display kg)
+  foundCategories?: Category[]; // simple list for the whole session
 }
 
